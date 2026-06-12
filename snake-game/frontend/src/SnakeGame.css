@@ -1,0 +1,105 @@
+.game-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  user-select: none;
+}
+
+.hud {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 560px;
+  padding: 0 4px;
+}
+
+.bubble-title {
+  font-family: 'Fredoka One', 'Arial Rounded MT Bold', Arial, sans-serif;
+  font-size: 1.4rem;
+  color: #fff;
+  text-align: center;
+  line-height: 1.25;
+  -webkit-text-stroke: 2px #7a4f00;
+  paint-order: stroke fill;
+  text-shadow: 3px 3px 0 #7a4f00, 0 4px 8px rgba(0,0,0,0.25);
+  letter-spacing: 0.04em;
+}
+
+.hud-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  color: #555;
+  text-transform: uppercase;
+}
+
+.hud-value {
+  display: block;
+  font-size: 1.4rem;
+  color: #e0e0e0;
+  margin-top: 2px;
+}
+
+.canvas-container {
+  position: relative;
+  border: 2px solid #1e1e3a;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 0 40px #00ff8820;
+}
+
+canvas {
+  display: block;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(202, 138, 4, 0.96);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  backdrop-filter: blur(3px);
+}
+
+.overlay-title {
+  font-size: 2.2rem;
+  font-weight: bold;
+  letter-spacing: 0.3em;
+  color: #fff;
+  text-shadow: 0 0 12px rgba(0,0,0,0.3);
+}
+
+.overlay-sub {
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.8);
+  letter-spacing: 0.1em;
+}
+
+.btn {
+  margin-top: 8px;
+  padding: 10px 32px;
+  background: transparent;
+  border: 2px solid #fff;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  font-size: 1rem;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn:hover {
+  background: #fff;
+  color: #ca8a04;
+}
+
+.controls {
+  font-size: 0.72rem;
+  color: #333;
+  letter-spacing: 0.12em;
+}
