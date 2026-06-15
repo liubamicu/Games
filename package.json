@@ -1,0 +1,16 @@
+{
+  "name": "games-hub",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "concurrently --names \"BACKEND,BANANA,SNAKE,TETRIS,HUB\" -c \"cyan,yellow,green,blue,magenta\" \"npm run backend\" \"npm run banana\" \"npm run snake\" \"npm run tetris\" \"npm run hub\"",
+    "backend": "cd snake-game\\backend && py -m uvicorn main:app --reload",
+    "banana": "cd space-invaders\\frontend && npm run dev",
+    "snake": "cd snake-game\\frontend && npm run dev",
+    "tetris": "cd tetris-game && set PORT=5175 && npm start",
+    "hub": "cd hub && py -m http.server 4000"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}
