@@ -190,7 +190,7 @@ export default function Game({ onGameOver, initialWave = 1, initialScore = 0, in
             s.shields -= 1
           } else {
             s.lives -= 1
-            if (s.lives <= 0) { overlayRef.current = 'dead'; setOverlay('dead'); return }
+            if (s.lives <= 0) { overlayRef.current = 'dead'; setOverlay('dead'); onGameOver?.('dead', s.score, s.wave); return }
           }
           break
         }
@@ -198,7 +198,7 @@ export default function Game({ onGameOver, initialWave = 1, initialScore = 0, in
 
       // Aliens reach bottom
       for (const a of s.aliens) {
-        if (a.alive && a.y + ALIEN_H >= s.player.y) { overlayRef.current = 'dead'; setOverlay('dead'); return }
+        if (a.alive && a.y + ALIEN_H >= s.player.y) { overlayRef.current = 'dead'; setOverlay('dead'); onGameOver?.('dead', s.score, s.wave); return }
       }
 
       // Wave cleared

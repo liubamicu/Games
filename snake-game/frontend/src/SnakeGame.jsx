@@ -21,7 +21,12 @@ function BananaTitle() {
     </div>
   )
 }
-const WS_URL = 'ws://localhost:8000/ws'
+// In dev the Python backend runs standalone on :8000; in the one-port build the WS is same-origin.
+const WS_URL = import.meta.env.DEV
+  ? 'ws://localhost:8000/ws'
+  : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
+const API = import.meta.env.DEV ? 'http://localhost:4000' : ''
+const NAME_KEY = 'snake_name'
 
 const KEY_MAP = {
   ArrowUp: 'UP', ArrowDown: 'DOWN', ArrowLeft: 'LEFT', ArrowRight: 'RIGHT',
@@ -42,6 +47,13 @@ export default function SnakeGame() {
   const [status, setStatus] = useState('connecting') // connecting | playing | dead | disconnected
   const [score, setScore] = useState(0)
   const [totalScore, setTotalScore] = useState(() => parseInt(localStorage.getItem('bonbon-total') || '0'))
+  const [playerName, setPlayerName] = useState(() => localStorage.getItem(NAME_KEY) || '')
+  const [nameInput, setNameInput] = useState('')
+  const [board, setBoard] = useState(null)   // top-10 array | null while saving
+  const [myRank, setMyRank] = useState(null)
+  const [showBoard, setShowBoard] = useState(false)
+  const playerNameRef = useRef(playerName)
+  useEffect(() => { playerNameRef.current = playerName }, [playerName])
 
   const draw = useCallback((segs) => {
     const state = gameStateRef.current
@@ -165,6 +177,20 @@ export default function SnakeGame() {
     animFrameRef.current = requestAnimationFrame(rafLoop)
   }, [draw])
 
+  const fetchBoard = useCallback(() => {
+    fetch(`${API}/api/scores/snake`).then(r => r.json())
+      .then(d => setBoard(Array.isArray(d) ? d : [])).catch(() => setBoard([]))
+  }, [])
+
+  const submitScore = useCallback((finalScore) => {
+    fetch(`${API}/api/scores/snake`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: playerNameRef.current || 'Player', score: finalScore, detail: '' }),
+    }).then(r => r.json())
+      .then(d => { if (d && Array.isArray(d.top)) { setBoard(d.top); setMyRank(d.rank ?? null) } else fetchBoard() })
+      .catch(() => fetchBoard())
+  }, [fetchBoard])
+
   const connect = useCallback(() => {
     if (wsRef.current) wsRef.current.close()
     setStatus('connecting')
@@ -196,6 +222,8 @@ export default function SnakeGame() {
       if (state.game_over) {
         gameActiveRef.current = false
         setStatus('dead')
+        setBoard(null); setMyRank(null)
+        submitScore(state.score)
       } else if (!gameActiveRef.current) {
         gameActiveRef.current = true
         rafLoop()
@@ -204,16 +232,17 @@ export default function SnakeGame() {
 
     ws.onclose = () => setStatus('disconnected')
     ws.onerror = () => setStatus('disconnected')
-  }, [draw, rafLoop])
+  }, [draw, rafLoop, submitScore])
 
   useEffect(() => {
+    if (!playerName) return        // wait until a name is entered before connecting
     connect()
     return () => {
       gameActiveRef.current = false
       wsRef.current?.close()
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
     }
-  }, [connect])
+  }, [connect, playerName])
 
   useEffect(() => {
     const onKey = (e) => {
@@ -241,8 +270,37 @@ export default function SnakeGame() {
     }
   }
 
+  function confirmName() {
+    const n = nameInput.trim().slice(0, 20)
+    if (!n) return
+    localStorage.setItem(NAME_KEY, n)
+    setPlayerName(n)
+  }
+
+  function openBoard() { fetchBoard(); setShowBoard(true) }
+
+  // First-time name gate — must enter a name before playing
+  if (!playerName) {
+    return (
+      <div className="game-wrapper">
+        <BananaTitle />
+        <div style={sx.gateBox}>
+          <p style={{ color: '#7a4f00', fontSize: '1rem', letterSpacing: '0.08em' }}>Enter your name to play</p>
+          <input style={sx.input} maxLength={20} value={nameInput} placeholder="Your name" autoFocus
+            onChange={e => setNameInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && confirmName()} />
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button style={sx.btn} onClick={confirmName}>START 🐍</button>
+            <button style={sx.btnAlt} onClick={openBoard}>🏆 SCORES</button>
+          </div>
+        </div>
+        {showBoard && <BoardModal board={board} highlight={playerName} onClose={() => setShowBoard(false)} />}
+      </div>
+    )
+  }
+
   return (
     <div className="game-wrapper">
+      <button style={sx.corner} title="High scores" onClick={openBoard}>🏆</button>
       <div className="hud">
         <span className="hud-label">SCORE <span className="hud-value">{score}</span></span>
         <BananaTitle />
@@ -262,8 +320,8 @@ export default function SnakeGame() {
         {status === 'dead' && (
           <div className="overlay">
             <p className="overlay-title">GAME OVER</p>
-            <p className="overlay-sub">Score: {score}</p>
-            <p className="overlay-sub">Total: {totalScore}</p>
+            <p className="overlay-sub">Score: {score}{myRank ? `  ·  Rank #${myRank}` : ''}</p>
+            <ScoreList board={board} highlight={playerName} />
             <button className="btn" onClick={restart}>PLAY AGAIN</button>
           </div>
         )}
@@ -284,6 +342,55 @@ export default function SnakeGame() {
           style={{ background: 'none', border: 'none', color: '#555', fontFamily: "'Courier New', monospace", fontSize: '0.72rem', letterSpacing: '0.12em', cursor: 'pointer', padding: 0 }}
         >RESET TOTAL</button>
       </p>
+
+      {showBoard && <BoardModal board={board} highlight={playerName} onClose={() => setShowBoard(false)} />}
     </div>
   )
+}
+
+function ScoreList({ board, highlight }) {
+  if (board === null) return <p className="overlay-sub">Saving…</p>
+  if (!board.length) return <p className="overlay-sub">No scores yet — be first!</p>
+  return (
+    <table style={sx.table}><tbody>
+      {board.map((s, i) => {
+        const me = highlight && (s.name || '').toLowerCase() === highlight.toLowerCase()
+        return (
+          <tr key={i} style={me ? sx.meRow : null}>
+            <td style={sx.tdRank}>{i + 1}</td>
+            <td style={sx.tdName}>{s.name}{me ? ' ◄' : ''}</td>
+            <td style={sx.tdScore}>{s.score}</td>
+          </tr>
+        )
+      })}
+    </tbody></table>
+  )
+}
+
+function BoardModal({ board, highlight, onClose }) {
+  return (
+    <div style={sx.modalOverlay} onClick={onClose}>
+      <div style={sx.modalBox} onClick={e => e.stopPropagation()}>
+        <p style={sx.modalTitle}>🏆 HIGH SCORES</p>
+        <ScoreList board={board} highlight={highlight} />
+        <button className="btn" onClick={onClose}>CLOSE</button>
+      </div>
+    </div>
+  )
+}
+
+const sx = {
+  gateBox: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', padding: '28px 36px', background: '#facc15', border: '3px solid #7a4f00', borderRadius: '12px' },
+  input: { padding: '10px 14px', fontFamily: "'Courier New', monospace", fontSize: '1rem', border: '2px solid #7a4f00', borderRadius: '6px', background: '#fffef0', color: '#7a4f00', outline: 'none', textAlign: 'center' },
+  btn: { padding: '10px 24px', background: '#22c55e', border: '2px solid #15803d', color: '#fff', fontFamily: "'Courier New', monospace", fontSize: '1rem', letterSpacing: '0.1em', cursor: 'pointer', borderRadius: '6px' },
+  btnAlt: { padding: '10px 24px', background: 'transparent', border: '2px solid #7a4f00', color: '#7a4f00', fontFamily: "'Courier New', monospace", fontSize: '1rem', letterSpacing: '0.1em', cursor: 'pointer', borderRadius: '6px' },
+  corner: { position: 'fixed', top: '12px', right: '12px', zIndex: 30, background: '#facc15', border: '2px solid #7a4f00', color: '#7a4f00', borderRadius: '8px', padding: '6px 12px', fontSize: '1.1rem', cursor: 'pointer' },
+  table: { borderCollapse: 'collapse', margin: '4px 0 8px', color: '#fff', minWidth: '260px' },
+  meRow: { background: 'rgba(255,255,255,0.20)' },
+  tdRank: { padding: '3px 10px', textAlign: 'right', opacity: 0.85 },
+  tdName: { padding: '3px 10px', textAlign: 'left', fontWeight: 'bold' },
+  tdScore: { padding: '3px 10px', textAlign: 'right' },
+  modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 40 },
+  modalBox: { background: '#ca8a04', border: '3px solid #7a4f00', borderRadius: '12px', padding: '24px 32px', textAlign: 'center' },
+  modalTitle: { fontSize: '1.4rem', fontWeight: 'bold', letterSpacing: '0.2em', color: '#fff', marginBottom: '10px' },
 }

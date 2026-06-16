@@ -25,6 +25,9 @@ const W = COLS * BLOCK;
 const H = ROWS * BLOCK;
 const NEXT_SIZE = 4 * BLOCK;
 
+const API = process.env.NODE_ENV === 'development' ? 'http://localhost:4000' : '';
+const NAME_KEY = 'tetris_name';
+
 const BANANAS = [
   { top: '4%',  left: '10%',  rot: '-20deg', size: '2.2rem', delay: '0.0s'  },
   { top: '8%',  left: '36%',  rot:  '15deg', size: '1.6rem', delay: '1.2s'  },
@@ -86,6 +89,13 @@ export default function App() {
   const cheatBuf = useRef('');
   const CHEAT = 'BANANA';
 
+  const [playerName, setPlayerName] = useState(() => localStorage.getItem(NAME_KEY) || '');
+  const [nameInput,  setNameInput]  = useState('');
+  const [scoresOpen, setScoresOpen] = useState(false);
+  const [board,      setBoard]      = useState(null);  // top-10 array | null while saving
+  const [myRank,     setMyRank]     = useState(null);
+  const submittedRef = useRef(false);
+
   const triggerBanana = useCallback(() => {
     setBananaTime(true);
     setTimeout(() => setBananaTime(false), 5000);
@@ -108,11 +118,46 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.code === 'Escape') setShopOpen(false);
+      if (e.code === 'Escape') { setShopOpen(false); setScoresOpen(false); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  const fetchBoard = useCallback(() => {
+    fetch(`${API}/api/scores/tetris`).then(r => r.json())
+      .then(d => setBoard(Array.isArray(d) ? d : [])).catch(() => setBoard([]));
+  }, []);
+
+  const submitScore = useCallback((score, level, lines) => {
+    fetch(`${API}/api/scores/tetris`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: localStorage.getItem(NAME_KEY) || 'Player', score, detail: `Lv ${level} · ${lines} lines` }),
+    }).then(r => r.json())
+      .then(d => { if (d && Array.isArray(d.top)) { setBoard(d.top); setMyRank(d.rank ?? null); } else fetchBoard(); })
+      .catch(() => fetchBoard());
+  }, [fetchBoard]);
+
+  const openScores = useCallback(() => { setMyRank(null); fetchBoard(); setScoresOpen(true); }, [fetchBoard]);
+
+  const confirmName = () => {
+    const n = nameInput.trim().slice(0, 20);
+    if (!n) return;
+    localStorage.setItem(NAME_KEY, n);
+    setPlayerName(n);
+  };
+
+  // Submit the score once when a game ends, then auto-show the rankings.
+  useEffect(() => {
+    if (game.over && !submittedRef.current) {
+      submittedRef.current = true;
+      setBoard(null); setMyRank(null);
+      submitScore(game.score, game.level, game.lines);
+      setScoresOpen(true);
+    } else if (!game.over) {
+      submittedRef.current = false;
+    }
+  }, [game.over, game.score, game.level, game.lines, submitScore]);
 
   useLayoutEffect(() => {
     const ctx = boardRef.current?.getContext('2d');
@@ -276,6 +321,12 @@ export default function App() {
         <span className="shop-sign-text">SHOP</span>
       </button>
 
+      {/* ── SCORES neon sign ───────────────────────────────── */}
+      <button onClick={openScores} style={scoreSignStyle}>
+        <span style={{ fontSize: 20 }}>🏆</span>
+        <span style={{ fontSize: 15, letterSpacing: 5 }}>SCORES</span>
+      </button>
+
       {/* ── Game ───────────────────────────────────────────── */}
       <div className="game-wrap">
 
@@ -431,6 +482,54 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ── Name gate (first play) ─────────────────────────── */}
+      {!playerName && (
+        <div className="shop-overlay">
+          <div className="shop-modal" style={{ width: 'min(420px, 92vw)' }}>
+            <div className="shop-header">
+              <span className="shop-title">🏆 ENTER NAME</span>
+            </div>
+            <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center' }}>
+              <p style={{ color: '#aaaacc', fontFamily: 'Orbitron, monospace', fontSize: 13, letterSpacing: 1, textAlign: 'center' }}>
+                Enter your name to play and appear on the high-score board.
+              </p>
+              <input autoFocus maxLength={20} value={nameInput} placeholder="YOUR NAME"
+                onChange={e => setNameInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') confirmName(); }}
+                style={tetInput} />
+              <button className="item-buy" style={{ fontSize: 14, padding: '8px 24px' }} onClick={confirmName}>START ▸</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── High-scores modal ──────────────────────────────── */}
+      {scoresOpen && (
+        <div className="shop-overlay" onClick={() => setScoresOpen(false)}>
+          <div className="shop-modal" style={{ width: 'min(480px, 92vw)' }} onClick={e => e.stopPropagation()}>
+            <div className="shop-header">
+              <span className="shop-title">🏆 HIGH SCORES</span>
+              <button className="shop-close" onClick={() => setScoresOpen(false)}>✕</button>
+            </div>
+            <div style={{ padding: 20 }}>
+              {game.over && (
+                <p style={{ color: '#ffcc00', fontFamily: 'Orbitron, monospace', textAlign: 'center', marginBottom: 14, letterSpacing: 1 }}>
+                  {myRank ? <>You ranked <b>#{myRank}</b> &middot; </> : null}{game.score.toLocaleString()} pts
+                </p>
+              )}
+              <LeaderTable board={board} highlight={localStorage.getItem(NAME_KEY) || ''} />
+            </div>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', padding: '0 0 18px' }}>
+              {game.over && (
+                <button className="item-buy" style={{ fontSize: 13, padding: '7px 20px' }}
+                  onClick={() => { setScoresOpen(false); game.start(); }}>PLAY AGAIN</button>
+              )}
+              <button className="shop-close" onClick={() => setScoresOpen(false)}>CLOSE</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -461,4 +560,38 @@ function CtrlKey({ k, desc }) {
     </div>
   );
 }
+
+function LeaderTable({ board, highlight }) {
+  const msg = (t) => <p style={{ color: '#aaaacc', fontFamily: 'Orbitron, monospace', textAlign: 'center', padding: '16px' }}>{t}</p>;
+  if (board === null) return msg('Saving…');
+  if (!board.length) return msg('No scores yet — be the first!');
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'Orbitron, monospace' }}>
+      <thead>
+        <tr style={{ color: '#ff00cc', fontSize: 12, letterSpacing: 2 }}>
+          <th style={{ textAlign: 'left', padding: '6px 10px' }}>#</th>
+          <th style={{ textAlign: 'left', padding: '6px 10px' }}>NAME</th>
+          <th style={{ textAlign: 'right', padding: '6px 10px' }}>SCORE</th>
+          <th style={{ textAlign: 'left', padding: '6px 10px' }}>DETAIL</th>
+        </tr>
+      </thead>
+      <tbody>
+        {board.map((s, i) => {
+          const me = highlight && (s.name || '').toLowerCase() === highlight.toLowerCase();
+          return (
+            <tr key={i} style={{ background: me ? 'rgba(255,204,0,0.12)' : 'transparent', color: me ? '#ffcc00' : '#dde' }}>
+              <td style={{ padding: '5px 10px' }}>{i + 1}</td>
+              <td style={{ padding: '5px 10px', fontWeight: me ? 700 : 400 }}>{s.name}{me ? ' ◄' : ''}</td>
+              <td style={{ padding: '5px 10px', textAlign: 'right' }}>{Number(s.score).toLocaleString()}</td>
+              <td style={{ padding: '5px 10px', fontSize: 11, color: '#8888aa' }}>{s.detail || ''}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+const tetInput = { width: '100%', maxWidth: 260, padding: '10px 14px', background: '#05050f', border: '1px solid #ff00cc', borderRadius: 6, color: '#fff', fontFamily: 'Orbitron, monospace', fontSize: 15, letterSpacing: 2, textAlign: 'center', outline: 'none' };
+const scoreSignStyle = { position: 'absolute', top: 28, left: 36, zIndex: 20, display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(0,0,16,0.75)', border: '2px solid #ffcc00', borderRadius: 8, padding: '10px 18px', cursor: 'pointer', color: '#ffcc00', fontFamily: 'Orbitron, monospace', textShadow: '0 0 10px #ffcc0099', boxShadow: '0 0 14px #ffcc0033' };
 
